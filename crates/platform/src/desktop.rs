@@ -324,11 +324,31 @@ pub fn surface_window_above(host: HWND, hwnd: HWND) -> HWND {
         let mut above = GetWindow(host, GW_HWNDPREV as u32);
         // Nonvisual windows can sit directly above Progman. A minimized elevated
         // terminal may reject relative placement even though it paints no surface.
-        while !above.0.is_null() && above != hwnd && !has_visible_surface(above) {
+        // Desktop-layer apps (rainmeter skins, desktop pets) pin themselves to
+        // this exact slot too; skipping them lets fences anchor above the whole
+        // desktop-layer stack instead of fighting them for the bottom slot.
+        while !above.0.is_null()
+            && above != hwnd
+            && (!has_visible_surface(above) || is_desktop_layer_window(above))
+        {
             above = GetWindow(above, GW_HWNDPREV as u32);
         }
         above
     }
+}
+
+/// Top-level window classes that live on the desktop layer below the fences.
+pub const DESKTOP_LAYER_CLASSES: &[&str] = &["RainmeterMeterWindow", "pygame"];
+
+fn is_desktop_layer_window(hwnd: HWND) -> bool {
+    let mut out = [0u16; 64];
+    // SAFETY: `out` is a live buffer sized above.
+    let n = unsafe { GetClassNameW(hwnd, PWSTR(out.as_mut_ptr()), out.len() as i32) };
+    if n <= 0 {
+        return false;
+    }
+    let class = String::from_utf16_lossy(&out[..n as usize]);
+    DESKTOP_LAYER_CLASSES.iter().any(|c| c.eq_ignore_ascii_case(&class))
 }
 
 /// The window directly above `hwnd` in the z-order (null HWND if none).
