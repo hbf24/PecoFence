@@ -546,5 +546,15 @@
   "每个功能都有动画演示": "모든 기능을 애니메이션으로 보여 줍니다",
   "桌面整理好了": "바탕 화면을 정리했습니다",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "파일은 옮겨지지 않았고 펜스에 표시만 됩니다.\n바탕 화면 빈 곳을 끌어 사각형을 그리면 펜스를 만들 수 있고, 빈 곳을 두 번 클릭하면 펜스를 숨기거나 표시할 수 있습니다.",
-  "没有匹配的文件": "일치하는 파일 없음"
+  "没有匹配的文件": "일치하는 파일 없음",
+  "新到达文件的默认落脚栅栏": "Default landing fence for new files",
+  "新文件或新下载到达桌面且未匹配任何规则时放进该栅栏（默认：“桌面”栅栏；文件夹入口无法作为目标）": "Where new files land when no rule matches them (default: Desktop fence; folder portals cannot be a target)",
+  "自动快照保留数量": "Auto-snapshots to keep",
+  "文件到达桌面或栅栏间移动时自动保存快照；0 表示关闭自动快照": "Saves a snapshot when files arrive or move between fences; 0 disables auto-snapshots",
+  "仅布局": "Layout only",
+  "仅成员": "Membership only",
+  "仅恢复栅栏位置和大小": "Restore fence positions and sizes only",
+  "仅恢复栅栏成员关系": "Restore item membership only",
+  "恢复快照后自动收起栅栏": "Roll up fences after restore",
+  "恢复快照后将栅栏恢复为收起状态": "Automatically roll up fences when a snapshot is restored"
 }

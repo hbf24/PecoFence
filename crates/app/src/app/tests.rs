@@ -581,7 +581,7 @@ mod ipc {
             snap(&format!("{AUTO_SNAPSHOT_PREFIX}c"), 4),
         ];
         let (oldest, next) = (list[1].id, list[2].id);
-        assert!(auto_snapshot_slot(&mut list, Some(oldest)));
+        assert!(auto_snapshot_slot(&mut list, 3, Some(oldest)));
         assert!(
             list.iter().any(|s| s.id == oldest),
             "restore target evicted"
@@ -600,7 +600,7 @@ mod ipc {
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}a"), 100));
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}b"), 101));
         let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
-        assert!(!auto_snapshot_slot(&mut list, None));
+        assert!(!auto_snapshot_slot(&mut list, 3, None));
         let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
         assert_eq!(after, before, "nothing may be evicted when no slot opens");
 
@@ -614,7 +614,7 @@ mod ipc {
         let oldest_auto = list.last().unwrap().id;
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}b"), 101));
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}c"), 102));
-        assert!(auto_snapshot_slot(&mut list, None));
+        assert!(auto_snapshot_slot(&mut list, 3, None));
         assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
         assert!(list.iter().all(|s| s.id != oldest_auto));
         assert!(users.iter().all(|u| list.iter().any(|s| s.id == *u)));
@@ -624,13 +624,13 @@ mod ipc {
             .map(|i| snap(&format!("mine {i}"), i as i64))
             .collect();
         let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
-        assert!(!auto_snapshot_slot(&mut list, None));
+        assert!(!auto_snapshot_slot(&mut list, 3, None));
         let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
         assert_eq!(after, before);
 
         // Plenty of room: nothing pruned beyond the rotation, slot granted.
         let mut list = vec![snap("mine", 1)];
-        assert!(auto_snapshot_slot(&mut list, None));
+        assert!(auto_snapshot_slot(&mut list, 3, None));
         assert_eq!(list.len(), 1);
     }
 

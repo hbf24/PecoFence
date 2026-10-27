@@ -67,6 +67,60 @@ pub struct Snapshot {
 
 pub const MAX_SNAPSHOTS: usize = 20;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreMode {
+    #[default]
+    All,
+    GeometryOnly,
+    MembershipOnly,
+}
+
+fn default_auto_max_count() -> usize {
+    5
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct AutoSnapshotSettings {
+    #[serde(default = "default_auto_max_count")]
+    pub max_count: usize,
+}
+
+impl Default for AutoSnapshotSettings {
+    fn default() -> Self {
+        Self {
+            max_count: default_auto_max_count(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotRestoreSettings {
+    #[serde(default = "default_true")]
+    pub rolled_up: bool,
+}
+
+impl Default for SnapshotRestoreSettings {
+    fn default() -> Self {
+        Self { rolled_up: true }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotSettings {
+    #[serde(default)]
+    pub auto: AutoSnapshotSettings,
+    #[serde(default)]
+    pub restore: SnapshotRestoreSettings,
+}
+
 /// Settings the file keeps but no version acts on (planned options that were never built).
 /// They stay in `config.json` because older versions require them to read the file; the CLI
 /// hides them from `settings get` / the schema and refuses to set them.
@@ -141,6 +195,8 @@ pub struct Settings {
     /// have its item records re-pointed instead of orphaned.
     #[serde(default)]
     pub desktop_path: Option<String>,
+    #[serde(default)]
+    pub snapshots: SnapshotSettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -240,6 +296,7 @@ impl Default for Settings {
             peek: PeekSettings::default(),
             icons: IconSettings::default(),
             desktop_path: None,
+            snapshots: SnapshotSettings::default(),
         }
     }
 }

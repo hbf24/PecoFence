@@ -654,6 +654,7 @@ impl App {
                 self.refresh_fence(id);
             }
             self.schedule_save();
+            self.schedule_auto_snapshot();
         }
     }
 }

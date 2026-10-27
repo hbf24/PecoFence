@@ -257,7 +257,15 @@ pub enum Method {
     /// taken first unless the list is full of user snapshots (then `warning` says so and
     /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?}`.
     #[serde(rename = "snapshots.restore")]
-    SnapshotsRestore { id: String },
+    SnapshotsRestore {
+        id: String,
+        #[serde(default)]
+        geometry_only: bool,
+        #[serde(default)]
+        membership_only: bool,
+        #[serde(default)]
+        rolled_up: Option<bool>,
+    },
     /// Result: `{changed, deleted: uuid}`.
     #[serde(rename = "snapshots.delete")]
     SnapshotsDelete { id: String },
@@ -696,7 +704,12 @@ mod tests {
             Method::RulesApply { dry_run: false },
             Method::RulesApply { dry_run: true },
             Method::SnapshotsSave { name: "x".into() },
-            Method::SnapshotsRestore { id: "x".into() },
+            Method::SnapshotsRestore {
+                id: "x".into(),
+                geometry_only: false,
+                membership_only: false,
+                rolled_up: None,
+            },
             Method::SnapshotsDelete { id: "x".into() },
             Method::ConfigExport {
                 path: "C:\\tmp\\x.json".into(),

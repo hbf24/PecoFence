@@ -11,7 +11,7 @@ use fence_options::{layout_name, parse_fence_prop, sort_name};
 use items::RenameError;
 use pecofence_core::geometry;
 use pecofence_core::rules::{self, Rule};
-use pecofence_core::{AssignedBy, Fence, Item, ItemSourceSpec, Settings, Snapshot};
+use pecofence_core::{AssignedBy, Fence, Item, ItemSourceSpec, RestoreMode, Settings, Snapshot};
 use pecofence_ipc::selector::{self, SelectorError};
 use pecofence_ipc::{
     AdjustedDto, BIG_MOVE_SNAPSHOT_ITEMS, BackupDto, EVENT_HEARTBEAT_SECS, EVENT_NAMES, ErrorCode,
@@ -58,9 +58,7 @@ pub(super) struct EventState {
     items: HashMap<ItemId, ItemSig>,
 }
 
-/// Newest `auto-cli-*` snapshots kept; older ones go when a new one is taken.
-const AUTO_SNAPSHOTS_KEPT: usize = 3;
-pub(super) const AUTO_SNAPSHOT_PREFIX: &str = "auto-cli-";
+pub(super) const AUTO_SNAPSHOT_PREFIX: &str = "auto-";
 /// Longest fence title, rule name or snapshot name accepted over IPC (chars).
 pub(super) const MAX_NAME_CHARS: usize = 256;
 /// Warning attached when the snapshot list is full of user snapshots.
@@ -390,8 +388,15 @@ fn auto_snapshot_name() -> String {
 /// a slot under `MAX_SNAPSHOTS` is free. `false` means the list is full of snapshots the user
 /// saved, which an automatic one must never evict. `protect` survives the pruning (see
 /// [`prune_auto_snapshots`]).
-pub(super) fn auto_snapshot_slot(snapshots: &mut Vec<Snapshot>, protect: Option<Uuid>) -> bool {
-    prune_auto_snapshots(snapshots, AUTO_SNAPSHOTS_KEPT.saturating_sub(1), protect);
+pub(super) fn auto_snapshot_slot(
+    snapshots: &mut Vec<Snapshot>,
+    max_count: usize,
+    protect: Option<Uuid>,
+) -> bool {
+    if max_count == 0 {
+        return false;
+    }
+    prune_auto_snapshots(snapshots, max_count.saturating_sub(1), protect);
     snapshots.len() < pecofence_core::MAX_SNAPSHOTS
 }
 
@@ -853,22 +858,37 @@ impl App {
                     .ok_or_else(|| IpcError::internal("snapshot vanished after saving"))?;
                 Ok(mutation(true, None, json!({ "snapshot": to_json(&snap)? })))
             }
-            Method::SnapshotsRestore { id } => {
+            Method::SnapshotsRestore {
+                id,
+                geometry_only,
+                membership_only,
+                rolled_up,
+            } => {
                 let target = self.resolve_snapshot(id)?;
-                // The backup the existing mechanism takes is this call's auto snapshot; when
-                // the list is full of the user's snapshots the layout is restored without one
-                // (warned) rather than evicting theirs.
-                let backup = if auto_snapshot_slot(&mut self.state.config.snapshots, Some(target)) {
+                let mode = match (geometry_only, membership_only) {
+                    (true, false) => RestoreMode::GeometryOnly,
+                    (false, true) => RestoreMode::MembershipOnly,
+                    _ => RestoreMode::All,
+                };
+                let max_count = self.state.config.settings.snapshots.auto.max_count;
+                let backup = if max_count > 0
+                    && auto_snapshot_slot(
+                        &mut self.state.config.snapshots,
+                        max_count,
+                        Some(target),
+                    ) {
                     Some(
                         self.state
-                            .restore_snapshot_with_backup(target, &auto_snapshot_name())
+                            .restore_snapshot_with_backup(target, &auto_snapshot_name(), mode, *rolled_up)
                             .ok_or_else(|| self.snapshot_not_found(id))?,
                     )
                 } else {
-                    if !self.state.restore_snapshot(target) {
+                    if !self.state.restore_snapshot(target, mode, *rolled_up) {
                         return Err(self.snapshot_not_found(id));
                     }
-                    self.ipc_warnings.push(SNAPSHOT_LIMIT_WARNING.to_string());
+                    if max_count > 0 {
+                        self.ipc_warnings.push(SNAPSHOT_LIMIT_WARNING.to_string());
+                    }
                     None
                 };
                 self.end_peek_now();
@@ -1551,8 +1571,9 @@ impl App {
     /// `auto-cli-<yyyy-mm-dd HH:MM:SS>` snapshot of the current layouts, keeping only the newest
     /// few. Older auto snapshots make room first; when the list is still full of the user's own
     /// snapshots none is taken (a warning is queued) rather than evicting one of theirs.
-    fn auto_snapshot(&mut self) -> Option<Uuid> {
-        if !auto_snapshot_slot(&mut self.state.config.snapshots, None) {
+    pub(super) fn auto_snapshot(&mut self) -> Option<Uuid> {
+        let max_count = self.state.config.settings.snapshots.auto.max_count;
+        if !auto_snapshot_slot(&mut self.state.config.snapshots, max_count, None) {
             self.ipc_warnings.push(SNAPSHOT_LIMIT_WARNING.to_string());
             return None;
         }

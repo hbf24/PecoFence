@@ -527,6 +527,18 @@ pub enum SnapshotCmd {
     Restore {
         /// Snapshot id, unique id prefix, or (unique) name
         id: String,
+        /// Restore only geometry layout (fence positions and sizes)
+        #[arg(long, conflicts_with = "membership_only")]
+        geometry_only: bool,
+        /// Restore only item and shortcut membership
+        #[arg(long, conflicts_with = "geometry_only")]
+        membership_only: bool,
+        /// Force fences to be rolled up after restore
+        #[arg(long, conflicts_with = "expanded")]
+        rolled_up: bool,
+        /// Force fences to be expanded after restore
+        #[arg(long, conflicts_with = "rolled_up")]
+        expanded: bool,
     },
     /// Delete a snapshot
     #[command(after_help = "Example: pecofence-cli snapshot delete 3f9c2a1e")]

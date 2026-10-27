@@ -837,7 +837,27 @@ fn run_snapshot(ctx: &Ctx, cmd: SnapshotCmd) -> Result<Reply, IpcError> {
     match cmd {
         SnapshotCmd::List => ctx.call(Method::SnapshotsList),
         SnapshotCmd::Save { name } => ctx.call(Method::SnapshotsSave { name }),
-        SnapshotCmd::Restore { id } => ctx.call(Method::SnapshotsRestore { id }),
+        SnapshotCmd::Restore {
+            id,
+            geometry_only,
+            membership_only,
+            rolled_up,
+            expanded,
+        } => {
+            let rolled_up = if rolled_up {
+                Some(true)
+            } else if expanded {
+                Some(false)
+            } else {
+                None
+            };
+            ctx.call(Method::SnapshotsRestore {
+                id,
+                geometry_only,
+                membership_only,
+                rolled_up,
+            })
+        }
         SnapshotCmd::Delete { id } => ctx.call(Method::SnapshotsDelete { id }),
     }
 }

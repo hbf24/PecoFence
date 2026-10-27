@@ -4,7 +4,7 @@ use pecofence_core::geometry::{self, PxRect, WorkArea};
 use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template, Unmatched};
 use pecofence_core::{
     AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
-    ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
+    ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, RestoreMode, SortMode,
 };
 use pecofence_platform::RECT;
 use pecofence_platform::shell::{self, DesktopEntry, EntryOrigin};
@@ -277,24 +277,153 @@ impl AppState {
         &mut self,
         id: uuid::Uuid,
         backup_name: &str,
+        mode: RestoreMode,
+        rolled_up: Option<bool>,
     ) -> Option<uuid::Uuid> {
         let snap = self.config.snapshots.iter().find(|s| s.id == id).cloned()?;
         let backup = self.save_snapshot(backup_name);
-        self.apply_snapshot_layouts(snap.layouts);
+        self.apply_snapshot_layouts(snap.layouts, mode, rolled_up);
         Some(backup)
     }
 
     /// Restores a snapshot's layouts without taking a backup first. False when `id` is unknown.
-    pub fn restore_snapshot(&mut self, id: uuid::Uuid) -> bool {
+    pub fn restore_snapshot(
+        &mut self,
+        id: uuid::Uuid,
+        mode: RestoreMode,
+        rolled_up: Option<bool>,
+    ) -> bool {
         let Some(snap) = self.config.snapshots.iter().find(|s| s.id == id).cloned() else {
             return false;
         };
-        self.apply_snapshot_layouts(snap.layouts);
+        self.apply_snapshot_layouts(snap.layouts, mode, rolled_up);
         true
     }
 
-    fn apply_snapshot_layouts(&mut self, layouts: Vec<pecofence_core::Layout>) {
-        self.config.layouts = layouts;
+    fn apply_snapshot_layouts(
+        &mut self,
+        snap_layouts: Vec<pecofence_core::Layout>,
+        mode: RestoreMode,
+        rolled_up: Option<bool>,
+    ) {
+        match mode {
+            RestoreMode::All => {
+                self.config.layouts = snap_layouts;
+            }
+            RestoreMode::GeometryOnly => {
+                let current_layouts = std::mem::take(&mut self.config.layouts);
+                let inbox_id = snap_layouts
+                    .first()
+                    .and_then(|l| l.fences.iter().find(|f| f.kind == FenceKind::Inbox).map(|f| f.id));
+
+                let mut new_layouts = snap_layouts;
+                for layout in &mut new_layouts {
+                    for fence in &mut layout.fences {
+                        if let Some(curr_fence) = current_layouts
+                            .iter()
+                            .flat_map(|l| &l.fences)
+                            .find(|f| f.id == fence.id)
+                        {
+                            fence.items = curr_fence.items.clone();
+                        } else {
+                            fence.items.clear();
+                        }
+                    }
+                    if let Some(target_inbox_id) = inbox_id {
+                        let target_fence_ids: HashSet<FenceId> =
+                            layout.fences.iter().map(|f| f.id).collect();
+                        let orphaned_items: Vec<ItemRef> = current_layouts
+                            .iter()
+                            .flat_map(|l| &l.fences)
+                            .filter(|f| !target_fence_ids.contains(&f.id))
+                            .flat_map(|f| &f.items)
+                            .cloned()
+                            .collect();
+
+                        if let Some(inbox_fence) =
+                            layout.fences.iter_mut().find(|f| f.id == target_inbox_id)
+                        {
+                            for item in orphaned_items {
+                                if !inbox_fence.items.iter().any(|r| r.item_id == item.item_id) {
+                                    inbox_fence.items.push(item);
+                                }
+                            }
+                        }
+                    }
+                }
+                self.config.layouts = new_layouts;
+            }
+            RestoreMode::MembershipOnly => {
+                let target_inbox_id = self.inbox_id();
+                let snap_fence_map: HashMap<FenceId, Vec<ItemRef>> = snap_layouts
+                    .iter()
+                    .flat_map(|l| &l.fences)
+                    .map(|f| (f.id, f.items.clone()))
+                    .collect();
+
+                let mut orphaned_items = Vec::new();
+                let current_fence_ids: HashSet<FenceId> = self
+                    .config
+                    .layouts
+                    .iter()
+                    .flat_map(|l| &l.fences)
+                    .map(|f| f.id)
+                    .collect();
+
+                for snap_layout in &snap_layouts {
+                    for snap_fence in &snap_layout.fences {
+                        if !current_fence_ids.contains(&snap_fence.id) {
+                            orphaned_items.extend(snap_fence.items.clone());
+                        }
+                    }
+                }
+
+                for layout in &mut self.config.layouts {
+                    for fence in &mut layout.fences {
+                        if let Some(items) = snap_fence_map.get(&fence.id) {
+                            fence.items = items.clone();
+                        } else {
+                            fence.items.clear();
+                        }
+                    }
+                    if let Some(inbox_id) = target_inbox_id {
+                        if let Some(inbox_fence) =
+                            layout.fences.iter_mut().find(|f| f.id == inbox_id)
+                        {
+                            for item in &orphaned_items {
+                                if !inbox_fence.items.iter().any(|r| r.item_id == item.item_id) {
+                                    inbox_fence.items.push(item.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let should_roll = rolled_up.unwrap_or(self.config.settings.snapshots.restore.rolled_up);
+        if should_roll {
+            for layout in &mut self.config.layouts {
+                for fence in &mut layout.fences {
+                    if !fence.rolled_up {
+                        fence.expanded_h = fence.geometry.h;
+                        fence.rolled_up = true;
+                    }
+                }
+            }
+        } else if rolled_up == Some(false) {
+            for layout in &mut self.config.layouts {
+                for fence in &mut layout.fences {
+                    if fence.rolled_up {
+                        fence.rolled_up = false;
+                        if fence.expanded_h > 0.0 {
+                            fence.geometry.h = fence.expanded_h;
+                        }
+                    }
+                }
+            }
+        }
+
         self.layout = 0;
         self.ensure_layout();
         self.normalize_tabs();
@@ -2964,6 +3093,40 @@ mod tests {
         assert_eq!(state.hidden_inbox(), Some(inbox));
         state.config.settings.hide_inbox_when_icons_shown = false;
         assert_eq!(state.hidden_inbox(), None);
+    }
+
+    #[test]
+    fn selective_snapshot_restore_geometry_and_membership() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let other = state.fences().iter().find(|f| f.id != inbox).unwrap().id;
+        let item = add_item(&mut state, inbox, "item1");
+
+        // Save original snapshot
+        let snap_id = state.save_snapshot("test-snap");
+
+        // Change geometry and move item to other fence
+        let orig_geo = state.fence(inbox).unwrap().geometry.clone();
+        let mut new_geo = orig_geo.clone();
+        new_geo.w = 500.0;
+        state.fence_mut(inbox).unwrap().geometry = new_geo.clone();
+        state.move_items(&[item], other);
+
+        assert_eq!(state.fence(inbox).unwrap().geometry.w, 500.0);
+        assert!(state.fence(other).unwrap().contains_item(item));
+
+        // Restore GeometryOnly: fence geometry restored to orig_geo, but items stay as current (in other)
+        assert!(state.restore_snapshot(snap_id, RestoreMode::GeometryOnly, Some(false)));
+        assert_eq!(state.fence(inbox).unwrap().geometry.w, orig_geo.w);
+        assert!(state.fence(other).unwrap().contains_item(item));
+
+        // Modify geometry again
+        state.fence_mut(inbox).unwrap().geometry = new_geo.clone();
+
+        // Restore MembershipOnly: fence geometry stays new_geo (500.0), but item returned to inbox
+        assert!(state.restore_snapshot(snap_id, RestoreMode::MembershipOnly, Some(false)));
+        assert_eq!(state.fence(inbox).unwrap().geometry.w, 500.0);
+        assert!(state.fence(inbox).unwrap().contains_item(item));
     }
 
     #[test]

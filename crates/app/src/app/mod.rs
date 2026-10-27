@@ -160,6 +160,9 @@ const TIMER_TMP_SETTLE: usize = 65;
 /// a file in several steps (a temporary file, then a rename).
 const TIMER_THEMES: usize = 66;
 const THEMES_SETTLE_MS: u32 = 300;
+/// Real-time auto-snapshot debounce timer.
+const TIMER_AUTO_SNAPSHOT: usize = 67;
+const AUTO_SNAPSHOT_DEBOUNCE_MS: u32 = 3000;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
 const MEMORY_LOG_GROWTH: u64 = 64 << 20;
@@ -295,6 +298,7 @@ pub struct App {
     /// Watches the `themes` folder once it exists, so a saved theme file shows at once.
     theme_watcher: Option<DirWatcher>,
     wallpaper_override: Option<String>,
+    auto_snapshot_pending: bool,
     pending_routes: Vec<PendingRoute>,
     /// The virtual fence a shell drop just went to, and when: the first desktop change batch
     /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
@@ -665,7 +669,8 @@ impl App {
                                 | TIMER_STARTUP_TASK
                                 | TIMER_TMP_SETTLE
                                 | TIMER_THEMES
-                                | TIMER_STARTUP_BACKDROPS => {
+                                | TIMER_STARTUP_BACKDROPS
+                                | TIMER_AUTO_SNAPSHOT => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
@@ -680,6 +685,7 @@ impl App {
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
+                                            TIMER_AUTO_SNAPSHOT => app.flush_auto_snapshot(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1194,6 +1200,7 @@ impl App {
             custom_theme_error,
             theme_watcher: None,
             wallpaper_override: args.wallpaper_override.clone(),
+            auto_snapshot_pending: false,
             pending_routes: Vec::new(),
             shell_drop_claim: None,
             frame_prev: None,
@@ -1474,6 +1481,28 @@ impl App {
 
     fn schedule_save(&self) {
         window::set_timer(self.control.hwnd(), TIMER_SAVE, 800);
+    }
+
+    pub(super) fn schedule_auto_snapshot(&mut self) {
+        if self.state.config.settings.snapshots.auto.max_count == 0 {
+            return;
+        }
+        self.auto_snapshot_pending = true;
+        window::set_timer(
+            self.control.hwnd(),
+            TIMER_AUTO_SNAPSHOT,
+            AUTO_SNAPSHOT_DEBOUNCE_MS,
+        );
+    }
+
+    pub(super) fn flush_auto_snapshot(&mut self) {
+        if self.auto_snapshot_pending {
+            self.auto_snapshot_pending = false;
+            if self.auto_snapshot().is_some() {
+                self.schedule_save();
+                self.push_settings_state();
+            }
+        }
     }
 
     /// After a save: one that failed leaves the state dirty. The first time in a run the tray

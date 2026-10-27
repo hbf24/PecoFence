@@ -463,6 +463,8 @@
     <section class="page" id="page-rules">
       <header class="page-header"><h2>整理规则</h2></header>
       <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B8;</span><div><div class="t">新到达文件的默认落脚栅栏</div><div class="s">新文件或新下载到达桌面且未匹配任何规则时放进该栅栏（默认：“桌面”栅栏；文件夹入口无法作为目标）</div></div></div>
+        <select id="defaultTargetFence" aria-label="新到达文件的默认落脚栅栏"></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">没有命中规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
         <select data-bind="rules.unmatched"><option value="defaultTarget">回到“桌面”栅栏</option><option value="stay">留在当前栅栏</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动摆放过的项目保持原位</div></div></div><button id="applyRules">立即应用</button></div>
@@ -470,7 +472,7 @@
       <div class="card stack"><div class="l"><span class="ic">&#xE8F4;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div>
         <div class="chips" id="templates">
           <button class="chip" data-template="images"><span class="ic">&#xEB9F;</span>图片</button><button class="chip" data-template="music"><span class="ic">&#xE8D6;</span>音乐</button><button class="chip" data-template="video"><span class="ic">&#xE714;</span>视频</button>
-          <button class="chip" data-template="archives"><span class="ic">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
+          <button class="chip" data-template="archives"><span class="ic">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="shortcuts"><span class="ic">&#xE71B;</span>快捷方式</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
         </div></div>
       <h3>规则列表</h3>
       <div id="ruleList"></div>
@@ -503,6 +505,10 @@
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE722;</span><div><div class="t">把当前布局存为快照</div><div class="s">记录所有栅栏的位置、大小和内容，随时恢复</div></div></div>
           <div class="actions"><input type="text" id="snapName" aria-label="快照名称（可选）" placeholder="快照名称（可选）"><button class="accent" id="snapSave">保存快照</button></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xE8B8;</span><div><div class="t">自动快照保留数量</div><div class="s">文件到达桌面或栅栏间移动时自动保存快照；0 表示关闭自动快照</div></div></div>
+          <div class="actions"><input type="number" id="snapAutoMax" min="0" max="20" aria-label="自动快照保留数量" data-bind="snapshots.auto.maxCount"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xE8B8;</span><div><div class="t">恢复快照后自动收起栅栏</div><div class="s">恢复快照后将栅栏恢复为收起状态</div></div></div>
+          <div class="toggle" role="switch" tabindex="0" data-bind="snapshots.restore.rolledUp"></div></div>
         <div class="rows" id="snapList"></div>
       </div>
       <h3 id="swapHeading">多显示器</h3>
@@ -1094,6 +1100,21 @@
       tgt.innerHTML = options;
       if ([...tgt.options].some(o => o.value === selected)) tgt.value = selected;
     }
+    const dtTgt = document.getElementById('defaultTargetFence');
+    if (dtTgt) {
+      const curDt = state.rules?.defaultTarget;
+      const curVal = (curDt && typeof curDt === 'object' && curDt.fence) ? curDt.fence : 'inbox';
+      const dtOptions = `<option value="inbox">${esc(t("桌面"))}</option>` + options;
+      if (dtTgt.innerHTML !== dtOptions) {
+        dtTgt.innerHTML = dtOptions;
+      }
+      dtTgt.value = curVal;
+      dtTgt.onchange = () => {
+        const val = dtTgt.value;
+        state.rules.defaultTarget = val === 'inbox' ? 'inbox' : { fence: val };
+        send({ type: 'setRules', rules: state.rules });
+      };
+    }
     const cats = document.getElementById('nrCats');
     if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
   }
@@ -1192,8 +1213,15 @@
       div.className = 'card';
       div.dataset.rowId = sn.id;
       div.innerHTML = `<div class="l"><div><div class="t">${esc(sn.name)}</div><div class="s">${esc(sn.date)} · ${esc(tf("{0} 个栅栏", sn.fenceCount))}</div></div></div>
-        <div class="actions"><button data-act="restore">${esc(t("恢复"))}</button><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div>`;
-      div.querySelector('[data-act=restore]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id });
+        <div class="actions">
+          <button data-act="restore">${esc(t("恢复"))}</button>
+          <button data-act="restore-geo" title="${esc(t("仅恢复栅栏位置和大小"))}">${esc(t("仅布局"))}</button>
+          <button data-act="restore-mem" title="${esc(t("仅恢复栅栏成员关系"))}">${esc(t("仅成员"))}</button>
+          <button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button>
+        </div>`;
+      div.querySelector('[data-act=restore]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id, mode: 'all' });
+      div.querySelector('[data-act=restore-geo]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id, mode: 'geometry' });
+      div.querySelector('[data-act=restore-mem]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id, mode: 'membership' });
       div.querySelector('[data-act=del]').onclick = () => send({ type: 'action', name: 'deleteSnapshot', id: sn.id });
       div.querySelector('[data-act=restore]').setAttribute('aria-label', t("恢复快照：") + sn.name);
       div.querySelector('[data-act=del]').setAttribute('aria-label', t("删除快照：") + sn.name);

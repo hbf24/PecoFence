@@ -260,46 +260,50 @@ pub fn recycle_bin_has_items() -> bool {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
     static LAST_KNOWN: AtomicBool = AtomicBool::new(false);
+    static IS_QUERYING: AtomicBool = AtomicBool::new(false);
     static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
+
     let mut asked = ASKED.lock().unwrap_or_else(|e| e.into_inner());
     let recent = asked.is_some_and(|t| t.elapsed() < Duration::from_secs(600));
-    if recent && !RECYCLE_BIN_STALE.swap(false, Ordering::Relaxed) {
-        return LAST_KNOWN.load(Ordering::Relaxed);
-    }
-    RECYCLE_BIN_STALE.store(false, Ordering::Relaxed);
-    *asked = Some(Instant::now());
-    // SAFETY: no arguments; returns a bitmask.
-    let drives = unsafe { GetLogicalDrives() };
-    let mut answered = false;
-    let mut full = false;
-    for i in 0..26u32 {
-        if drives & (1 << i) == 0 {
-            continue;
+
+    if RECYCLE_BIN_STALE.swap(false, Ordering::Relaxed) || (!recent && !IS_QUERYING.load(Ordering::Relaxed)) {
+        *asked = Some(Instant::now());
+        if !IS_QUERYING.swap(true, Ordering::Relaxed) {
+            std::thread::spawn(move || {
+                // SAFETY: no arguments; returns a bitmask.
+                let drives = unsafe { GetLogicalDrives() };
+                let mut answered = false;
+                let mut full = false;
+                for i in 0..26u32 {
+                    if drives & (1 << i) == 0 {
+                        continue;
+                    }
+                    let root = to_wide(&format!("{}:\\", (b'A' + i as u8) as char));
+                    // SAFETY: the string is NUL-terminated and outlives the call.
+                    if unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) } != DRIVE_FIXED as u32 {
+                        continue;
+                    }
+                    let mut info = SHQUERYRBINFO {
+                        cbSize: size_of::<SHQUERYRBINFO>() as u32,
+                        ..Default::default()
+                    };
+                    // SAFETY: `info` is a live struct with `cbSize` set; `root` is a NUL-terminated path.
+                    if unsafe { SHQueryRecycleBinW(PCWSTR(root.as_ptr()), &mut info) }.is_ok() {
+                        answered = true;
+                        if info.i64NumItems > 0 {
+                            full = true;
+                            break;
+                        }
+                    }
+                }
+                if answered {
+                    LAST_KNOWN.store(full, Ordering::Relaxed);
+                }
+                IS_QUERYING.store(false, Ordering::Relaxed);
+            });
         }
-        let root = to_wide(&format!("{}:\\", (b'A' + i as u8) as char));
-        // SAFETY: the string is NUL-terminated and outlives the call.
-        if unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) } != DRIVE_FIXED as u32 {
-            continue;
-        }
-        let mut info = SHQUERYRBINFO {
-            cbSize: size_of::<SHQUERYRBINFO>() as u32,
-            ..Default::default()
-        };
-        // SAFETY: `info` is a live struct with `cbSize` set; `root` is a NUL-terminated path.
-        if unsafe { SHQueryRecycleBinW(PCWSTR(root.as_ptr()), &mut info) }.is_ok() {
-            answered = true;
-            if info.i64NumItems > 0 {
-                full = true;
-                break;
-            }
-        }
     }
-    if answered {
-        LAST_KNOWN.store(full, Ordering::Relaxed);
-        full
-    } else {
-        LAST_KNOWN.load(Ordering::Relaxed)
-    }
+    LAST_KNOWN.load(Ordering::Relaxed)
 }
 
 /// The special desktop items the user has enabled in Windows (Recycle Bin, This PC, ...), as

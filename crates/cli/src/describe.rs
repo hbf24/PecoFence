@@ -252,8 +252,8 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "snapshot restore",
         Some("snapshots.restore"),
-        "Restore by id (names only while unique); the current layout is snapshotted first",
-        "pecofence-cli snapshot restore 3f9c2a1e"
+        "Restore by id (names only while unique); --geometry-only or --membership-only restores selectively",
+        "pecofence-cli snapshot restore 3f9c2a1e --geometry-only"
     ),
     entry!(
         "snapshot delete",

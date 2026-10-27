@@ -212,6 +212,9 @@ impl App {
             "fs change batch timing"
         );
         if report.changed() || renamed > 0 {
+            if report.added > 0 {
+                self.schedule_auto_snapshot();
+            }
             tracing::info!(?report, "desktop resynced");
             // Renamed / modified files may have new icons; a file that just arrived (moved in
             // by the shell) may have been extracted while it was still landing. Once per icon

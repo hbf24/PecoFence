@@ -561,6 +561,11 @@ impl App {
                         .and_then(|i| uuid::Uuid::parse_str(i).ok())
                         && self.state.config.snapshots.iter().any(|s| s.id == id)
                     {
+                        let mode = match v.get("mode").and_then(|m| m.as_str()) {
+                            Some("geometry") => pecofence_core::RestoreMode::GeometryOnly,
+                            Some("membership") => pecofence_core::RestoreMode::MembershipOnly,
+                            _ => pecofence_core::RestoreMode::All,
+                        };
                         // Snapshot of the current state first, so "restore" is reversible;
                         // a list full of the user's own snapshots has no room for it, so
                         // nothing is restored.
@@ -571,6 +576,8 @@ impl App {
                         self.state.restore_snapshot_with_backup(
                             id,
                             pecofence_core::i18n::text("恢复快照前"),
+                            mode,
+                            None,
                         );
                         self.end_peek_now();
                         self.relayout_from_state();

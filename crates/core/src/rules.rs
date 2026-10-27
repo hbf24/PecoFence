@@ -598,17 +598,19 @@ pub enum Template {
     Video,
     Archives,
     Installers,
+    Shortcuts,
     /// Installers and archives idle for [`CLEANUP_IDLE_DAYS`]: gathered, not deleted.
     Cleanup,
 }
 
 impl Template {
-    pub const ALL: [Template; 6] = [
+    pub const ALL: [Template; 7] = [
         Template::Images,
         Template::Music,
         Template::Video,
         Template::Archives,
         Template::Installers,
+        Template::Shortcuts,
         Template::Cleanup,
     ];
 
@@ -620,6 +622,7 @@ impl Template {
             Template::Video => "video",
             Template::Archives => "archives",
             Template::Installers => "installers",
+            Template::Shortcuts => "shortcuts",
             Template::Cleanup => "cleanup",
         }
     }
@@ -636,6 +639,7 @@ impl Template {
             Template::Video => "视频",
             Template::Archives => "压缩包",
             Template::Installers => "安装包",
+            Template::Shortcuts => "快捷方式",
             Template::Cleanup => "待清理",
         })
         .to_string()
@@ -649,6 +653,7 @@ impl Template {
             Template::Video => vec![Cond::Type(vec![TypeCategory::Video])],
             Template::Archives => vec![Cond::Type(vec![TypeCategory::Archives])],
             Template::Installers => vec![Cond::Type(vec![TypeCategory::Installers])],
+            Template::Shortcuts => vec![Cond::Type(vec![TypeCategory::Shortcuts])],
             Template::Cleanup => vec![
                 Cond::Type(vec![TypeCategory::Installers, TypeCategory::Archives]),
                 Cond::IdleDays {
