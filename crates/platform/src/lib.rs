@@ -61,6 +61,7 @@ pub mod rawinput;
 pub mod shell;
 pub mod shell_icons;
 pub mod shell_menu;
+pub mod shellnew;
 pub mod shell_notify;
 pub mod store;
 pub mod sysparams;

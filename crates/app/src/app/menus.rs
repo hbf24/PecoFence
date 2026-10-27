@@ -50,6 +50,11 @@ const CMD_FENCE_RENAME: u32 = 330;
 const CMD_FENCE_OPTIONS: u32 = 331;
 const CMD_FENCE_NEW_FOLDER: u32 = 340;
 const CMD_FENCE_NEW_TEXT: u32 = 341;
+/// ShellNew "New" entries: `CMD_FENCE_NEW_EXT0 + index` into
+/// [`pecofence_platform::shellnew::entries`], re-queried at dispatch time.
+const CMD_FENCE_NEW_EXT0: u32 = 350;
+const CMD_FENCE_NEW_EXT_SLOTS: u32 = 8;
+const CMD_FENCE_NEW_EXT_LAST: u32 = CMD_FENCE_NEW_EXT0 + CMD_FENCE_NEW_EXT_SLOTS - 1;
 const CMD_FENCE_PASTE: u32 = 342;
 const CMD_FENCE_VIEW_ICONS: u32 = 360;
 const CMD_FENCE_VIEW_LIST: u32 = 361;
@@ -631,7 +636,16 @@ impl App {
                 false,
                 false,
             )
-            .icon(glyph::DOCUMENT)
+            .icon(glyph::DOCUMENT);
+        // ShellNew entries the installed programs registered (Word, Excel, …),
+        // one command id per candidate slot; see `CMD_FENCE_NEW_EXT0`.
+        for (i, entry) in pecofence_platform::shellnew::entries().iter().enumerate() {
+            if i >= CMD_FENCE_NEW_EXT_SLOTS as usize {
+                break;
+            }
+            new_menu.item(CMD_FENCE_NEW_EXT0 + i as u32, &entry.name, false, false);
+        }
+        new_menu
             .separator()
             .item(
                 CMD_TAB_NEW,
@@ -818,7 +832,27 @@ impl App {
                 }
             }
             CMD_FENCE_NEW_FOLDER => self.create_desktop_item(fence, true),
-            CMD_FENCE_NEW_TEXT => self.create_desktop_item(fence, false),
+            CMD_FENCE_NEW_TEXT => self.create_desktop_from_template(
+                fence,
+                &pecofence_core::i18n::text("新建 文本文档").to_string(),
+                ".txt",
+                None,
+            ),
+            CMD_FENCE_NEW_EXT0..=CMD_FENCE_NEW_EXT_LAST => {
+                let i = (cmd - CMD_FENCE_NEW_EXT0) as usize;
+                if let Some(entry) = pecofence_platform::shellnew::entries().get(i) {
+                    self.create_desktop_from_template(
+                        fence,
+                        &format!(
+                            "{} {}",
+                            pecofence_core::i18n::text("新建"),
+                            entry.name
+                        ),
+                        &entry.ext,
+                        entry.template.clone(),
+                    );
+                }
+            }
             CMD_FENCE_ICON_32 | CMD_FENCE_ICON_48 | CMD_FENCE_ICON_64 | CMD_FENCE_ICON_96 => {
                 let size = match cmd {
                     CMD_FENCE_ICON_32 => 32,

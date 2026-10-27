@@ -53,14 +53,34 @@ impl App {
     /// Fence menu "新建 ▸": create the file/folder on the real desktop and remember which fence
     /// asked for it; the watcher's next Added event routes it there and opens rename.
     pub(super) fn create_desktop_item(&mut self, fence: FenceId, folder: bool) {
+        let base = pecofence_core::i18n::text("新建文件夹");
+        self.spawn_created_entry(fence, &base, "", None, folder);
+    }
+
+    /// A `platform::shellnew` entry: `base` is the full display base name
+    /// ("新建 Word 文档"), `template` the registered ShellNew template to copy —
+    /// an empty file is not a valid docx/xlsx/pptx.
+    pub(super) fn create_desktop_from_template(
+        &mut self,
+        fence: FenceId,
+        base: &str,
+        ext: &str,
+        template: Option<std::path::PathBuf>,
+    ) {
+        self.spawn_created_entry(fence, base, ext, template, false);
+    }
+
+    fn spawn_created_entry(
+        &mut self,
+        fence: FenceId,
+        base: &str,
+        ext: &str,
+        template: Option<std::path::PathBuf>,
+        folder: bool,
+    ) {
         let portal_dir = self.state.portal_path(fence);
         let Some(dir) = portal_dir.clone().or_else(shell::user_desktop) else {
             return;
-        };
-        let (base, ext) = if folder {
-            (pecofence_core::i18n::text("新建文件夹"), "")
-        } else {
-            (pecofence_core::i18n::text("新建 文本文档"), ".txt")
         };
         let mut path = dir.join(format!("{base}{ext}"));
         let mut n = 2;
@@ -70,6 +90,8 @@ impl App {
         }
         let created = if folder {
             std::fs::create_dir(&path)
+        } else if let Some(t) = &template {
+            std::fs::copy(t, &path).map(drop)
         } else {
             // `create_new`: a file another program put there since the check is not truncated.
             std::fs::File::create_new(&path).map(drop)
