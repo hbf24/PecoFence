@@ -615,3 +615,53 @@ mod anchor_tests {
         Ok(())
     }
 }
+
+/// Deletes `paths` to the Recycle Bin (or permanently with `permanent`) via
+/// the classic shell copy engine. Unlike invoking the context-menu `delete`
+/// verb this does not depend on the item's handler exposing the verb, which
+/// silently no-ops in some setups.
+pub fn shell_delete(paths: &[&std::path::Path], permanent: bool) -> Result<bool> {
+    use windows_core::link;
+    #[repr(C)]
+    struct ShFileOpStructW {
+        hwnd: HWND,
+        w_func: u32,
+        from: *const u16,
+        to: *const u16,
+        flags: u16,
+        aborted: i32,
+        name_mappings: *mut core::ffi::c_void,
+        progress_title: *const u16,
+    }
+    link!("shell32.dll" "system" fn SHFileOperationW(lpfileop: *mut ShFileOpStructW) -> i32);
+
+    const FO_DELETE: u32 = 3;
+    const FOF_ALLOWUNDO: u16 = 0x40;
+    const FOF_NOCONFIRMATION: u16 = 0x10;
+    const FOF_SILENT: u16 = 0x04;
+    const FOF_NOERRORUI: u16 = 0x0400;
+
+    let mut from = String::new();
+    for p in paths {
+        from.push_str(&p.to_string_lossy());
+        from.push('\0');
+    }
+    from.push('\0');
+    let from_w = to_wide(&from);
+    let mut op = ShFileOpStructW {
+        hwnd: HWND::default(),
+        w_func: FO_DELETE,
+        from: from_w.as_ptr(),
+        to: std::ptr::null(),
+        flags: FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI,
+        aborted: 0,
+        name_mappings: std::ptr::null_mut(),
+        progress_title: std::ptr::null(),
+    };
+    if !permanent {
+        op.flags |= FOF_ALLOWUNDO;
+    }
+    // SAFETY: `op` and the NUL-terminated `from_w` list outlive the call.
+    let code = unsafe { SHFileOperationW(&mut op) };
+    Ok(code == 0 && op.aborted == 0)
+}
